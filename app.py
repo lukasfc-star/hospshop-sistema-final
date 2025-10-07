@@ -1,185 +1,155 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""
-Sistema Hospshop - Versão Railway
-Gestão de Licitações e Fornecedores
-"""
-
-from flask import Flask, render_template_string, jsonify, request, session, redirect, url_for
-import psycopg2
 import os
-from datetime import datetime
+import psycopg2
+from flask import Flask, render_template_string, request, redirect, url_for, session, jsonify
+from werkzeug.security import check_password_hash, generate_password_hash
+import logging
 
 app = Flask(__name__)
-app.secret_key = os.environ.get("SECRET_KEY", "hospshop_railway_secret_2025")
+app.secret_key = os.environ.get('SECRET_KEY', 'hospshop-secret-key-2024')
 
-# Railway automaticamente fornece DATABASE_URL
-DATABASE_URL = os.environ.get("DATABASE_URL")
+# Configuração do banco de dados
+DATABASE_URL = os.environ.get('DATABASE_URL')
 
 def get_db_connection():
-    """Estabelece conexão com o banco de dados PostgreSQL"""
-    return psycopg2.connect(DATABASE_URL)
+    try:
+        conn = psycopg2.connect(DATABASE_URL)
+        return conn
+    except Exception as e:
+        app.logger.error(f"Erro na conexão com banco: {e}")
+        return None
 
 def init_db():
-    """Inicializar banco de dados"""
+    """Inicializa o banco de dados com as tabelas necessárias"""
+    conn = get_db_connection()
+    if not conn:
+        return False
+    
     try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
+        cur = conn.cursor()
         
-        # Tabela de usuários
-        cursor.execute("""
+        # Criar tabela de usuários
+        cur.execute('''
             CREATE TABLE IF NOT EXISTS usuarios (
                 id SERIAL PRIMARY KEY,
-                username VARCHAR(80) UNIQUE NOT NULL,
-                password VARCHAR(120) NOT NULL,
-                nivel VARCHAR(50) DEFAULT 'consulta',
+                username VARCHAR(50) UNIQUE NOT NULL,
+                password_hash VARCHAR(255) NOT NULL,
+                email VARCHAR(100),
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
-        """)
+        ''')
         
-        # Tabela de fornecedores
-        cursor.execute("""
+        # Criar tabela de fornecedores
+        cur.execute('''
             CREATE TABLE IF NOT EXISTS fornecedores (
                 id SERIAL PRIMARY KEY,
                 nome VARCHAR(255) NOT NULL,
-                cnpj VARCHAR(20),
+                cnpj VARCHAR(18),
                 categoria VARCHAR(100),
                 cidade VARCHAR(100),
-                uf VARCHAR(2),
+                estado VARCHAR(2),
                 telefone VARCHAR(20),
                 email VARCHAR(100),
                 responsavel VARCHAR(100),
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
-        """)
+        ''')
         
-        # Tabela de plataformas
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS plataformas (
-                id SERIAL PRIMARY KEY,
-                nome VARCHAR(255) NOT NULL,
-                url VARCHAR(255),
-                login VARCHAR(100),
-                senha VARCHAR(100),
-                descricao TEXT,
-                status VARCHAR(20) DEFAULT 'ativo',
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
-        
-        # Tabela de licitações
-        cursor.execute("""
+        # Criar tabela de licitações
+        cur.execute('''
             CREATE TABLE IF NOT EXISTS licitacoes (
                 id SERIAL PRIMARY KEY,
                 numero VARCHAR(50) NOT NULL,
-                orgao VARCHAR(255),
-                objeto TEXT,
-                modalidade VARCHAR(100),
-                valor_estimado NUMERIC(15, 2),
+                orgao VARCHAR(255) NOT NULL,
+                objeto TEXT NOT NULL,
+                modalidade VARCHAR(50),
+                valor DECIMAL(15,2),
                 data_abertura DATE,
-                data_fechamento DATE,
-                status VARCHAR(50) DEFAULT 'aberta',
-                plataforma_origem VARCHAR(100),
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
-        
-        # Tabela de logs de atividade
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS logs_atividade (
-                id SERIAL PRIMARY KEY,
-                usuario VARCHAR(80),
-                acao VARCHAR(100),
-                detalhes TEXT,
-                ip_address VARCHAR(45),
+                status VARCHAR(20) DEFAULT 'ABERTA',
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
-        """)
+        ''')
         
-        # Inserir usuário admin se não existir
-        cursor.execute("SELECT COUNT(*) FROM usuarios WHERE username = 'admin'")
-        if cursor.fetchone()[0] == 0:
-            cursor.execute("""
-                INSERT INTO usuarios (username, password, nivel) 
-                VALUES (%s, %s, %s)
-            """, ('admin', 'admin123', 'admin'))
+        # Criar tabela de plataformas
+        cur.execute('''
+            CREATE TABLE IF NOT EXISTS plataformas (
+                id SERIAL PRIMARY KEY,
+                nome VARCHAR(100) NOT NULL,
+                url VARCHAR(255),
+                login VARCHAR(100),
+                descricao TEXT,
+                status VARCHAR(20) DEFAULT 'ATIVO',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        
+        # Inserir usuário admin padrão
+        cur.execute("SELECT COUNT(*) FROM usuarios WHERE username = 'admin'")
+        if cur.fetchone()[0] == 0:
+            admin_hash = generate_password_hash('admin123')
+            cur.execute(
+                "INSERT INTO usuarios (username, password_hash, email) VALUES (%s, %s, %s)",
+                ('admin', admin_hash, 'admin@hospshop.com')
+            )
+        
+        # Inserir dados de exemplo
+        cur.execute("SELECT COUNT(*) FROM fornecedores")
+        if cur.fetchone()[0] == 0:
+            fornecedores_exemplo = [
+                ('MEDICALTECH EQUIPAMENTOS LTDA', '12.345.678/0001-90', 'EQUIPAMENTOS', 'São Paulo', 'SP', '(11) 3456-7890', 'contato@medicaltech.com', 'João Silva'),
+                ('HOSPITECH SOLUÇÕES MÉDICAS', '23.456.789/0001-01', 'EQUIPAMENTOS', 'São Paulo', 'SP', '(11) 2345-6789', 'vendas@hospitech.com', 'Maria Santos'),
+                ('BIOMEDICAL EQUIPAMENTOS', '34.567.890/0001-12', 'EQUIPAMENTOS', 'Goiânia', 'GO', '(62) 3456-7890', 'comercial@biomedical.com', 'Carlos Oliveira'),
+                ('PHARMA DISTRIBUIDORA', '45.678.901/0001-23', 'MEDICAMENTOS', 'Rio de Janeiro', 'RJ', '(21) 3456-7890', 'pedidos@pharma.com', 'Ana Costa'),
+                ('MEDICAL SUPPLIES LTDA', '56.789.012/0001-34', 'MATERIAIS', 'Brasília', 'DF', '(61) 3456-7890', 'suprimentos@medical.com', 'Pedro Lima')
+            ]
+            
+            for fornecedor in fornecedores_exemplo:
+                cur.execute(
+                    "INSERT INTO fornecedores (nome, cnpj, categoria, cidade, estado, telefone, email, responsavel) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
+                    fornecedor
+                )
+        
+        cur.execute("SELECT COUNT(*) FROM licitacoes")
+        if cur.fetchone()[0] == 0:
+            licitacoes_exemplo = [
+                ('PE 001/2025', 'Hospital Municipal de São Paulo', 'Aquisição de equipamentos médicos', 'Pregão Eletrônico', 250000.00, '2025-01-15', 'ABERTA'),
+                ('CC 002/2025', 'Secretaria de Saúde do Estado', 'Fornecimento de materiais médico-hospitalares', 'Concorrência', 500000.00, '2025-01-20', 'ABERTA'),
+                ('TP 003/2025', 'Hospital das Clínicas', 'Manutenção de equipamentos médicos', 'Tomada de Preços', 150000.00, '2025-01-25', 'ABERTA')
+            ]
+            
+            for licitacao in licitacoes_exemplo:
+                cur.execute(
+                    "INSERT INTO licitacoes (numero, orgao, objeto, modalidade, valor, data_abertura, status) VALUES (%s, %s, %s, %s, %s, %s, %s)",
+                    licitacao
+                )
+        
+        cur.execute("SELECT COUNT(*) FROM plataformas")
+        if cur.fetchone()[0] == 0:
+            plataformas_exemplo = [
+                ('Comprasnet (Compras Públicas)', 'https://www.comprasnet.gov.br', 'imagemhosp', 'Portal oficial do Governo Federal'),
+                ('BLL (Bolsa de Licitações)', 'https://www.bll.org.br', '', 'Bolsa de Licitações e Leilões do Brasil'),
+                ('Licitação-E (Banco do Brasil)', 'https://www.licitacoes-e.com.br', 'JF648886', 'Plataforma de licitações eletrônicas do BB'),
+                ('BNC (Bolsa Nacional de Compras)', 'https://www.bnc.org.br', '', 'Bolsa Nacional de Compras'),
+                ('Licitanet', 'https://www.licitanet.com.br', '01943800170', 'Portal de licitações Licitanet'),
+                ('Publinexo', 'https://www.publinexo.com.br', 'adm@imagemhospitalar', 'Plataforma Publinexo de licitações'),
+                ('Compras GO', 'https://www.comprasgovernamentais.gov.br', '', 'Portal de Compras Governamentais'),
+                ('SlicX', 'https://www.slicx.com.br', 'Hopshop', 'Plataforma SlicX de licitações')
+            ]
+            
+            for plataforma in plataformas_exemplo:
+                cur.execute(
+                    "INSERT INTO plataformas (nome, url, login, descricao) VALUES (%s, %s, %s, %s)",
+                    plataforma
+                )
         
         conn.commit()
-        cursor.close()
+        cur.close()
         conn.close()
-        print("✅ Banco de dados inicializado com sucesso")
         return True
+        
     except Exception as e:
-        print(f"❌ Erro ao inicializar banco: {e}")
-        return False
-
-def load_sample_data():
-    """Carregar dados de exemplo"""
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        
-        # Verificar se já existem dados
-        cursor.execute('SELECT COUNT(*) FROM fornecedores')
-        if cursor.fetchone()[0] == 0:
-            # Inserir fornecedores de exemplo
-            fornecedores = [
-                ('MEDICALTECH EQUIPAMENTOS LTDA', '12.345.678/0001-90', 'EQUIPAMENTOS', 'São Paulo', 'SP', '(11) 3456-7890', 'contato@medicaltech.com.br', 'João Silva'),
-                ('HOSPITECH SOLUÇÕES MÉDICAS', '23.456.789/0001-01', 'EQUIPAMENTOS', 'São Paulo', 'SP', '(11) 2345-6789', 'vendas@hospitech.com.br', 'Maria Santos'),
-                ('BIOMEDICAL EQUIPAMENTOS', '34.567.890/0001-12', 'EQUIPAMENTOS', 'Goiânia', 'GO', '(62) 3456-7890', 'contato@biomedical.com.br', 'Carlos Lima'),
-                ('PHARMA DISTRIBUIDORA', '45.678.901/0001-23', 'MEDICAMENTOS', 'Rio de Janeiro', 'RJ', '(21) 3456-7890', 'vendas@pharma.com.br', 'Ana Costa'),
-                ('MEDICAL SUPPLIES LTDA', '56.789.012/0001-34', 'MATERIAIS', 'Brasília', 'DF', '(61) 3456-7890', 'contato@medicalsupplies.com.br', 'Pedro Oliveira')
-            ]
-            
-            for fornecedor in fornecedores:
-                cursor.execute("""
-                    INSERT INTO fornecedores (nome, cnpj, categoria, cidade, uf, telefone, email, responsavel)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-                """, fornecedor)
-        
-        # Verificar se já existem plataformas
-        cursor.execute('SELECT COUNT(*) FROM plataformas')
-        if cursor.fetchone()[0] == 0:
-            plataformas = [
-                ('Comprasnet (Compras Públicas)', 'https://www.comprasnet.gov.br', 'imagemhosp', 'HS32521210', 'Portal oficial de compras do Governo Federal'),
-                ('BLL (Bolsa de Licitações)', 'https://www.bll.org.br', '', '', 'Bolsa de Licitações e Leilões do Brasil'),
-                ('Licitação-E (Banco do Brasil)', 'https://www.licitacoes-e.com.br', 'JF648886', 'Lic74125', 'Plataforma de licitações eletrônicas do BB'),
-                ('BNC (Bolsa Nacional de Compras)', 'https://www.bnc.org.br', '', '', 'Bolsa Nacional de Compras'),
-                ('Licitanet', 'https://www.licitanet.com.br', '01943800170', 'HS32521210', 'Portal de licitações Licitanet'),
-                ('Publinexo', 'https://www.publinexo.com.br', 'adm@imagemhospitalar', 'Licita4152@', 'Plataforma Publinexo de licitações'),
-                ('Compras GO', 'https://www.comprasgovernamentais.gov.br', '', '', 'Portal de Compras Governamentais'),
-                ('SlicX', 'https://www.slicx.com.br', 'Hopshop', 'HS32521210@$', 'Plataforma SlicX de licitações')
-            ]
-            
-            for plataforma in plataformas:
-                cursor.execute("""
-                    INSERT INTO plataformas (nome, url, login, senha, descricao)
-                    VALUES (%s, %s, %s, %s, %s)
-                """, plataforma)
-        
-        # Verificar se já existem licitações
-        cursor.execute('SELECT COUNT(*) FROM licitacoes')
-        if cursor.fetchone()[0] == 0:
-            licitacoes = [
-                ('PE 001/2025', 'Hospital Municipal de São Paulo', 'Aquisição de equipamentos médicos hospitalares', 'Pregão Eletrônico', 250000.00, '2025-10-15', 'aberta', 'Comprasnet'),
-                ('CC 002/2025', 'Secretaria de Saúde do Estado', 'Fornecimento de materiais médico-hospitalares', 'Concorrência', 500000.00, '2025-10-20', 'aberta', 'BLL'),
-                ('TP 003/2025', 'Hospital das Clínicas', 'Manutenção de equipamentos médicos', 'Tomada de Preços', 150000.00, '2025-10-25', 'aberta', 'Licitanet')
-            ]
-            
-            for licitacao in licitacoes:
-                cursor.execute("""
-                    INSERT INTO licitacoes (numero, orgao, objeto, modalidade, valor_estimado, data_abertura, status, plataforma_origem)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-                """, licitacao)
-        
-        conn.commit()
-        cursor.close()
-        conn.close()
-        print("✅ Dados de exemplo carregados com sucesso")
-        return True
-    except Exception as e:
-        print(f"❌ Erro ao carregar dados: {e}")
+        app.logger.error(f"Erro ao inicializar banco: {e}")
+        if conn:
+            conn.close()
         return False
 
 # Template HTML principal
@@ -189,436 +159,607 @@ HTML_TEMPLATE = '''
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Hospshop - Sistema de Licitações</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <title>{% block title %}Hospshop - Sistema de Licitações{% endblock %}</title>
     <style>
-        body { background-color: #f8f9fa; }
-        .navbar { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }
-        .card { border-radius: 15px; box-shadow: 0 5px 15px rgba(0,0,0,0.08); }
-        .btn-primary { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border: none; }
-        .stats-card { border-left: 4px solid #667eea; }
-        .badge-online { background-color: #28a745; }
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            color: #333;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        .header {
+            background: rgba(255, 255, 255, 0.95);
+            padding: 20px;
+            border-radius: 15px;
+            margin-bottom: 30px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+            backdrop-filter: blur(10px);
+        }
+        
+        .header h1 {
+            color: #2c3e50;
+            text-align: center;
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+        
+        .nav {
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+            margin-top: 20px;
+        }
+        
+        .nav-btn {
+            background: linear-gradient(45deg, #3498db, #2980b9);
+            color: white;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 25px;
+            cursor: pointer;
+            font-size: 16px;
+            transition: all 0.3s ease;
+            text-decoration: none;
+            display: inline-block;
+        }
+        
+        .nav-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(52, 152, 219, 0.4);
+        }
+        
+        .content {
+            background: rgba(255, 255, 255, 0.95);
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+            backdrop-filter: blur(10px);
+        }
+        
+        .login-form {
+            max-width: 400px;
+            margin: 100px auto;
+            background: rgba(255, 255, 255, 0.95);
+            padding: 40px;
+            border-radius: 15px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+        }
+        
+        .form-group {
+            margin-bottom: 20px;
+        }
+        
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+            color: #2c3e50;
+        }
+        
+        .form-group input {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            font-size: 16px;
+            transition: border-color 0.3s ease;
+        }
+        
+        .form-group input:focus {
+            outline: none;
+            border-color: #3498db;
+        }
+        
+        .btn-primary {
+            background: linear-gradient(45deg, #3498db, #2980b9);
+            color: white;
+            padding: 12px 30px;
+            border: none;
+            border-radius: 25px;
+            cursor: pointer;
+            font-size: 16px;
+            width: 100%;
+            transition: all 0.3s ease;
+        }
+        
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(52, 152, 219, 0.4);
+        }
+        
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        
+        .stat-card {
+            background: linear-gradient(45deg, #e74c3c, #c0392b);
+            color: white;
+            padding: 25px;
+            border-radius: 15px;
+            text-align: center;
+            box-shadow: 0 5px 15px rgba(231, 76, 60, 0.3);
+        }
+        
+        .stat-card h3 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+        
+        .stat-card p {
+            font-size: 1.1em;
+            opacity: 0.9;
+        }
+        
+        .data-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+            background: white;
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+        }
+        
+        .data-table th {
+            background: linear-gradient(45deg, #34495e, #2c3e50);
+            color: white;
+            padding: 15px;
+            text-align: left;
+            font-weight: bold;
+        }
+        
+        .data-table td {
+            padding: 12px 15px;
+            border-bottom: 1px solid #eee;
+        }
+        
+        .data-table tr:hover {
+            background-color: #f8f9fa;
+        }
+        
+        .status-badge {
+            padding: 5px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: bold;
+            text-transform: uppercase;
+        }
+        
+        .status-ativo {
+            background: #2ecc71;
+            color: white;
+        }
+        
+        .status-aberta {
+            background: #f39c12;
+            color: white;
+        }
+        
+        .logout-btn {
+            background: linear-gradient(45deg, #e74c3c, #c0392b);
+            color: white;
+            padding: 8px 16px;
+            border: none;
+            border-radius: 20px;
+            cursor: pointer;
+            font-size: 14px;
+            text-decoration: none;
+            display: inline-block;
+            float: right;
+        }
+        
+        .section-title {
+            color: #2c3e50;
+            font-size: 2em;
+            margin-bottom: 20px;
+            text-align: center;
+        }
     </style>
 </head>
 <body>
-    {% if not session.username %}
-    <!-- Login Form -->
-    <div class="container mt-5">
-        <div class="row justify-content-center">
-            <div class="col-md-4">
-                <div class="card">
-                    <div class="card-body">
-                        <h3 class="text-center mb-4">
-                            <i class="fas fa-hospital"></i> Hospshop
-                            <small class="d-block text-muted">Sistema Online</small>
-                        </h3>
-                        <form method="POST" action="/login">
-                            <div class="mb-3">
-                                <label class="form-label">Usuário</label>
-                                <input type="text" class="form-control" name="username" required>
-                            </div>
-                            <div class="mb-3">
-                                <label class="form-label">Senha</label>
-                                <input type="password" class="form-control" name="password" required>
-                            </div>
-                            <button type="submit" class="btn btn-primary w-100">Entrar</button>
-                        </form>
-                        <div class="mt-3 text-center">
-                            <small>Teste: admin / admin123</small>
-                            <br><span class="badge badge-online">🟢 Sistema Online</span>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-    {% else %}
-    <!-- Dashboard -->
-    <nav class="navbar navbar-expand-lg navbar-dark">
-        <div class="container-fluid">
-            <a class="navbar-brand" href="#"><i class="fas fa-hospital"></i> Hospshop</a>
-            <div class="navbar-nav ms-auto">
-                <span class="navbar-text me-3">🟢 Online</span>
-                <a class="nav-link" href="/logout">Sair ({{ session.username }})</a>
-            </div>
-        </div>
-    </nav>
-
-    <div class="container-fluid mt-4">
-        <div class="row">
-            <!-- Sidebar -->
-            <div class="col-md-2">
-                <div class="card">
-                    <div class="list-group list-group-flush">
-                        <a href="#" class="list-group-item list-group-item-action active" onclick="showSection('dashboard')">
-                            <i class="fas fa-tachometer-alt"></i> Dashboard
-                        </a>
-                        <a href="#" class="list-group-item list-group-item-action" onclick="showSection('fornecedores')">
-                            <i class="fas fa-building"></i> Fornecedores
-                        </a>
-                        <a href="#" class="list-group-item list-group-item-action" onclick="showSection('licitacoes')">
-                            <i class="fas fa-gavel"></i> Licitações
-                        </a>
-                        <a href="#" class="list-group-item list-group-item-action" onclick="showSection('plataformas')">
-                            <i class="fas fa-globe"></i> Plataformas
-                        </a>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Main Content -->
-            <div class="col-md-10">
-                <!-- Dashboard Section -->
-                <div id="dashboard" class="content-section">
-                    <h2>Dashboard <small class="text-muted">Sistema Online</small></h2>
-                    <div class="row mb-4">
-                        <div class="col-md-3">
-                            <div class="card stats-card">
-                                <div class="card-body">
-                                    <h3 id="total-fornecedores">{{ stats.fornecedores }}</h3>
-                                    <p>Fornecedores</p>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="col-md-3">
-                            <div class="card stats-card">
-                                <div class="card-body">
-                                    <h3 id="total-licitacoes">{{ stats.licitacoes }}</h3>
-                                    <p>Licitações</p>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="col-md-3">
-                            <div class="card stats-card">
-                                <div class="card-body">
-                                    <h3 id="total-plataformas">{{ stats.plataformas }}</h3>
-                                    <p>Plataformas</p>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="col-md-3">
-                            <div class="card stats-card">
-                                <div class="card-body">
-                                    <h3>{{ stats.licitacoes_abertas }}</h3>
-                                    <p>Abertas</p>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Fornecedores Section -->
-                <div id="fornecedores" class="content-section" style="display: none;">
-                    <h2>Fornecedores</h2>
-                    <div class="card">
-                        <div class="card-body">
-                            <div class="table-responsive">
-                                <table class="table table-hover">
-                                    <thead>
-                                        <tr>
-                                            <th>Nome</th>
-                                            <th>CNPJ</th>
-                                            <th>Categoria</th>
-                                            <th>Cidade/UF</th>
-                                            <th>Telefone</th>
-                                            <th>Responsável</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody id="fornecedores-list">
-                                        <!-- Carregado via JavaScript -->
-                                    </tbody>
-                                </table>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Licitações Section -->
-                <div id="licitacoes" class="content-section" style="display: none;">
-                    <h2>Licitações</h2>
-                    <div class="card">
-                        <div class="card-body">
-                            <div class="table-responsive">
-                                <table class="table table-hover">
-                                    <thead>
-                                        <tr>
-                                            <th>Número</th>
-                                            <th>Órgão</th>
-                                            <th>Objeto</th>
-                                            <th>Modalidade</th>
-                                            <th>Valor</th>
-                                            <th>Data Abertura</th>
-                                            <th>Status</th>
-                                            <th>Plataforma</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody id="licitacoes-list">
-                                        <!-- Carregado via JavaScript -->
-                                    </tbody>
-                                </table>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Plataformas Section -->
-                <div id="plataformas" class="content-section" style="display: none;">
-                    <h2>Plataformas</h2>
-                    <div class="card">
-                        <div class="card-body">
-                            <div class="table-responsive">
-                                <table class="table table-hover">
-                                    <thead>
-                                        <tr>
-                                            <th>Nome</th>
-                                            <th>URL</th>
-                                            <th>Login</th>
-                                            <th>Descrição</th>
-                                            <th>Status</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody id="plataformas-list">
-                                        <!-- Carregado via JavaScript -->
-                                    </tbody>
-                                </table>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-    {% endif %}
-
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-    <script>
-        function showSection(sectionName) {
-            // Esconder todas as seções
-            document.querySelectorAll('.content-section').forEach(section => {
-                section.style.display = 'none';
-            });
-            
-            // Mostrar seção selecionada
-            document.getElementById(sectionName).style.display = 'block';
-            
-            // Atualizar navegação
-            document.querySelectorAll('.list-group-item').forEach(item => {
-                item.classList.remove('active');
-            });
-            event.target.classList.add('active');
-            
-            // Carregar dados da seção
-            if (sectionName === 'fornecedores') {
-                fetch('/api/fornecedores')
-                    .then(response => response.json())
-                    .then(data => {
-                        let list = document.getElementById('fornecedores-list');
-                        list.innerHTML = '';
-                        data.forEach(item => {
-                            list.innerHTML += `<tr><td>${item.nome}</td><td>${item.cnpj}</td><td>${item.categoria}</td><td>${item.cidade}/${item.uf}</td><td>${item.telefone}</td><td>${item.responsavel}</td></tr>`;
-                        });
-                    });
-            } else if (sectionName === 'licitacoes') {
-                fetch('/api/licitacoes')
-                    .then(response => response.json())
-                    .then(data => {
-                        let list = document.getElementById('licitacoes-list');
-                        list.innerHTML = '';
-                        data.forEach(item => {
-                            list.innerHTML += `<tr><td>${item.numero}</td><td>${item.orgao}</td><td>${item.objeto}</td><td>${item.modalidade}</td><td>R$ ${item.valor_estimado.toFixed(2)}</td><td>${item.data_abertura}</td><td><span class="badge bg-success">${item.status}</span></td><td>${item.plataforma_origem || 'N/A'}</td></tr>`;
-                        });
-                    });
-            } else if (sectionName === 'plataformas') {
-                fetch('/api/plataformas')
-                    .then(response => response.json())
-                    .then(data => {
-                        let list = document.getElementById('plataformas-list');
-                        list.innerHTML = '';
-                        data.forEach(item => {
-                            list.innerHTML += `<tr><td>${item.nome}</td><td><a href="${item.url}" target="_blank">${item.url}</a></td><td>${item.login}</td><td>${item.descricao}</td><td><span class="badge bg-success">Ativo</span></td></tr>`;
-                        });
-                    });
-            }
-        }
-
-        // Carregar dashboard por padrão
-        document.addEventListener('DOMContentLoaded', function() {
-            showSection('dashboard');
-        });
-    </script>
+    {% block content %}{% endblock %}
 </body>
 </html>
 '''
 
 @app.route('/')
 def index():
-    if 'username' not in session:
-        return render_template_string(HTML_TEMPLATE)
-    
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        
-        cursor.execute('SELECT COUNT(*) FROM fornecedores')
-        total_fornecedores = cursor.fetchone()[0]
-        
-        cursor.execute('SELECT COUNT(*) FROM licitacoes')
-        total_licitacoes = cursor.fetchone()[0]
-        
-        cursor.execute('SELECT COUNT(*) FROM plataformas')
-        total_plataformas = cursor.fetchone()[0]
-        
-        cursor.execute("SELECT COUNT(*) FROM licitacoes WHERE status = 'aberta'")
-        licitacoes_abertas = cursor.fetchone()[0]
-        
-        cursor.close()
-        conn.close()
-        
-        stats = {
-            'fornecedores': total_fornecedores,
-            'licitacoes': total_licitacoes,
-            'plataformas': total_plataformas,
-            'licitacoes_abertas': licitacoes_abertas
-        }
-        
-        return render_template_string(HTML_TEMPLATE, stats=stats)
-    except Exception as e:
-        print(f"Erro no dashboard: {e}")
-        return render_template_string(HTML_TEMPLATE, stats={'fornecedores': 0, 'licitacoes': 0, 'plataformas': 0, 'licitacoes_abertas': 0})
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+    return redirect(url_for('dashboard'))
 
-@app.route('/login', methods=['POST'])
+@app.route('/login', methods=['GET', 'POST'])
 def login():
-    try:
+    if request.method == 'POST':
         username = request.form['username']
         password = request.form['password']
         
         conn = get_db_connection()
-        cursor = conn.cursor()
-        cursor.execute("SELECT username, nivel FROM usuarios WHERE username = %s AND password = %s", (username, password))
-        user = cursor.fetchone()
-        cursor.close()
-        conn.close()
+        if not conn:
+            return "Erro de conexão com banco de dados", 500
         
-        if user:
-            session['username'] = user[0]
-            session['nivel'] = user[1]
-            return redirect(url_for('index'))
-        
-        return redirect(url_for('index'))
-    except Exception as e:
-        print(f"Erro no login: {e}")
-        return redirect(url_for('index'))
+        try:
+            cur = conn.cursor()
+            cur.execute("SELECT id, password_hash FROM usuarios WHERE username = %s", (username,))
+            user = cur.fetchone()
+            
+            if user and check_password_hash(user[1], password):
+                session['user_id'] = user[0]
+                session['username'] = username
+                return redirect(url_for('dashboard'))
+            else:
+                error = "Usuário ou senha inválidos"
+                
+        except Exception as e:
+            error = f"Erro no login: {e}"
+        finally:
+            cur.close()
+            conn.close()
+    
+    login_html = '''
+    {% extends "base.html" %}
+    {% block content %}
+    <div class="login-form">
+        <h2 style="text-align: center; color: #2c3e50; margin-bottom: 30px;">
+            🏥 Hospshop Login
+        </h2>
+        {% if error %}
+        <div style="background: #e74c3c; color: white; padding: 10px; border-radius: 5px; margin-bottom: 20px; text-align: center;">
+            {{ error }}
+        </div>
+        {% endif %}
+        <form method="POST">
+            <div class="form-group">
+                <label for="username">Usuário:</label>
+                <input type="text" id="username" name="username" required>
+            </div>
+            <div class="form-group">
+                <label for="password">Senha:</label>
+                <input type="password" id="password" name="password" required>
+            </div>
+            <button type="submit" class="btn-primary">Entrar</button>
+        </form>
+        <div style="text-align: center; margin-top: 20px; color: #7f8c8d;">
+            <small>Usuário: admin | Senha: admin123</small>
+        </div>
+    </div>
+    {% endblock %}
+    '''
+    
+    return render_template_string(HTML_TEMPLATE + login_html, error=locals().get('error'))
 
 @app.route('/logout')
 def logout():
     session.clear()
-    return redirect(url_for('index'))
+    return redirect(url_for('login'))
 
-@app.route('/api/fornecedores')
-def api_fornecedores():
+@app.route('/dashboard')
+def dashboard():
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+    
+    conn = get_db_connection()
+    if not conn:
+        return "Erro de conexão com banco de dados", 500
+    
     try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        cursor.execute('SELECT id, nome, cnpj, categoria, cidade, uf, telefone, email, responsavel FROM fornecedores ORDER BY nome')
-        rows = cursor.fetchall()
-        cursor.close()
-        conn.close()
+        cur = conn.cursor()
         
-        fornecedores = []
-        for row in rows:
-            fornecedores.append({
-                'id': row[0],
-                'nome': row[1],
-                'cnpj': row[2],
-                'categoria': row[3],
-                'cidade': row[4],
-                'uf': row[5],
-                'telefone': row[6],
-                'email': row[7],
-                'responsavel': row[8]
-            })
+        # Contar estatísticas
+        cur.execute("SELECT COUNT(*) FROM fornecedores")
+        total_fornecedores = cur.fetchone()[0]
         
-        return jsonify(fornecedores)
+        cur.execute("SELECT COUNT(*) FROM licitacoes")
+        total_licitacoes = cur.fetchone()[0]
+        
+        cur.execute("SELECT COUNT(*) FROM plataformas")
+        total_plataformas = cur.fetchone()[0]
+        
+        cur.execute("SELECT COUNT(*) FROM licitacoes WHERE status = 'ABERTA'")
+        licitacoes_abertas = cur.fetchone()[0]
+        
     except Exception as e:
-        print(f"Erro na API fornecedores: {e}")
-        return jsonify([])
+        return f"Erro ao carregar dashboard: {e}", 500
+    finally:
+        cur.close()
+        conn.close()
+    
+    dashboard_html = '''
+    {% extends "base.html" %}
+    {% block content %}
+    <div class="container">
+        <div class="header">
+            <h1>🏥 Sistema Hospshop</h1>
+            <p style="text-align: center; color: #7f8c8d; font-size: 1.2em;">
+                Gestão Inteligente de Licitações Hospitalares
+            </p>
+            <div class="nav">
+                <a href="{{ url_for('fornecedores') }}" class="nav-btn">👥 Fornecedores</a>
+                <a href="{{ url_for('licitacoes') }}" class="nav-btn">📋 Licitações</a>
+                <a href="{{ url_for('plataformas') }}" class="nav-btn">🌐 Plataformas</a>
+                <a href="{{ url_for('logout') }}" class="logout-btn">🚪 Sair</a>
+            </div>
+        </div>
+        
+        <div class="content">
+            <h2 class="section-title">📊 Dashboard</h2>
+            
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <h3>{{ total_fornecedores }}</h3>
+                    <p>Fornecedores</p>
+                </div>
+                <div class="stat-card">
+                    <h3>{{ total_licitacoes }}</h3>
+                    <p>Licitações</p>
+                </div>
+                <div class="stat-card">
+                    <h3>{{ total_plataformas }}</h3>
+                    <p>Plataformas</p>
+                </div>
+                <div class="stat-card">
+                    <h3>{{ licitacoes_abertas }}</h3>
+                    <p>Licitações Abertas</p>
+                </div>
+            </div>
+            
+            <div style="text-align: center; margin-top: 30px;">
+                <p style="color: #7f8c8d; font-size: 1.1em;">
+                    Bem-vindo ao sistema, <strong>{{ session.username }}</strong>! 
+                    Selecione uma opção no menu acima para começar.
+                </p>
+            </div>
+        </div>
+    </div>
+    {% endblock %}
+    '''
+    
+    return render_template_string(HTML_TEMPLATE + dashboard_html, 
+                                total_fornecedores=total_fornecedores,
+                                total_licitacoes=total_licitacoes,
+                                total_plataformas=total_plataformas,
+                                licitacoes_abertas=licitacoes_abertas,
+                                session=session)
 
-@app.route('/api/licitacoes')
-def api_licitacoes():
+@app.route('/fornecedores')
+def fornecedores():
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+    
+    conn = get_db_connection()
+    if not conn:
+        return "Erro de conexão com banco de dados", 500
+    
     try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        cursor.execute('SELECT id, numero, orgao, objeto, modalidade, valor_estimado, data_abertura, status, plataforma_origem FROM licitacoes ORDER BY data_abertura DESC')
-        rows = cursor.fetchall()
-        cursor.close()
-        conn.close()
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM fornecedores ORDER BY nome")
+        fornecedores_data = cur.fetchall()
         
-        licitacoes = []
-        for row in rows:
-            licitacoes.append({
-                'id': row[0],
-                'numero': row[1],
-                'orgao': row[2],
-                'objeto': row[3],
-                'modalidade': row[4],
-                'valor_estimado': float(row[5]) if row[5] is not None else 0,
-                'data_abertura': row[6].isoformat() if row[6] is not None else None,
-                'status': row[7],
-                'plataforma_origem': row[8]
-            })
-        
-        return jsonify(licitacoes)
     except Exception as e:
-        print(f"Erro na API licitações: {e}")
-        return jsonify([])
+        return f"Erro ao carregar fornecedores: {e}", 500
+    finally:
+        cur.close()
+        conn.close()
+    
+    fornecedores_html = '''
+    {% extends "base.html" %}
+    {% block content %}
+    <div class="container">
+        <div class="header">
+            <h1>👥 Fornecedores</h1>
+            <div class="nav">
+                <a href="{{ url_for('dashboard') }}" class="nav-btn">🏠 Dashboard</a>
+                <a href="{{ url_for('licitacoes') }}" class="nav-btn">📋 Licitações</a>
+                <a href="{{ url_for('plataformas') }}" class="nav-btn">🌐 Plataformas</a>
+                <a href="{{ url_for('logout') }}" class="logout-btn">🚪 Sair</a>
+            </div>
+        </div>
+        
+        <div class="content">
+            <h2 class="section-title">Lista de Fornecedores</h2>
+            
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Nome</th>
+                        <th>CNPJ</th>
+                        <th>Categoria</th>
+                        <th>Localização</th>
+                        <th>Telefone</th>
+                        <th>Responsável</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for fornecedor in fornecedores_data %}
+                    <tr>
+                        <td><strong>{{ fornecedor[1] }}</strong></td>
+                        <td>{{ fornecedor[2] }}</td>
+                        <td>{{ fornecedor[3] }}</td>
+                        <td>{{ fornecedor[4] }}/{{ fornecedor[5] }}</td>
+                        <td>{{ fornecedor[6] }}</td>
+                        <td>{{ fornecedor[8] }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {% endblock %}
+    '''
+    
+    return render_template_string(HTML_TEMPLATE + fornecedores_html, 
+                                fornecedores_data=fornecedores_data)
 
-@app.route('/api/plataformas')
-def api_plataformas():
+@app.route('/licitacoes')
+def licitacoes():
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+    
+    conn = get_db_connection()
+    if not conn:
+        return "Erro de conexão com banco de dados", 500
+    
     try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        cursor.execute('SELECT id, nome, url, login, senha, descricao FROM plataformas ORDER BY nome')
-        rows = cursor.fetchall()
-        cursor.close()
-        conn.close()
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM licitacoes ORDER BY data_abertura DESC")
+        licitacoes_data = cur.fetchall()
         
-        plataformas = []
-        for row in rows:
-            plataformas.append({
-                'id': row[0],
-                'nome': row[1],
-                'url': row[2],
-                'login': row[3],
-                'senha': '***' if row[4] else '',
-                'descricao': row[5]
-            })
-        
-        return jsonify(plataformas)
     except Exception as e:
-        print(f"Erro na API plataformas: {e}")
-        return jsonify([])
+        return f"Erro ao carregar licitações: {e}", 500
+    finally:
+        cur.close()
+        conn.close()
+    
+    licitacoes_html = '''
+    {% extends "base.html" %}
+    {% block content %}
+    <div class="container">
+        <div class="header">
+            <h1>📋 Licitações</h1>
+            <div class="nav">
+                <a href="{{ url_for('dashboard') }}" class="nav-btn">🏠 Dashboard</a>
+                <a href="{{ url_for('fornecedores') }}" class="nav-btn">👥 Fornecedores</a>
+                <a href="{{ url_for('plataformas') }}" class="nav-btn">🌐 Plataformas</a>
+                <a href="{{ url_for('logout') }}" class="logout-btn">🚪 Sair</a>
+            </div>
+        </div>
+        
+        <div class="content">
+            <h2 class="section-title">Lista de Licitações</h2>
+            
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Número</th>
+                        <th>Órgão</th>
+                        <th>Objeto</th>
+                        <th>Modalidade</th>
+                        <th>Valor</th>
+                        <th>Data Abertura</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for licitacao in licitacoes_data %}
+                    <tr>
+                        <td><strong>{{ licitacao[1] }}</strong></td>
+                        <td>{{ licitacao[2] }}</td>
+                        <td>{{ licitacao[3] }}</td>
+                        <td>{{ licitacao[4] }}</td>
+                        <td>R$ {{ "{:,.2f}".format(licitacao[5]) if licitacao[5] else "N/A" }}</td>
+                        <td>{{ licitacao[6].strftime('%d/%m/%Y') if licitacao[6] else "N/A" }}</td>
+                        <td><span class="status-badge status-aberta">{{ licitacao[7] }}</span></td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {% endblock %}
+    '''
+    
+    return render_template_string(HTML_TEMPLATE + licitacoes_html, 
+                                licitacoes_data=licitacoes_data)
+
+@app.route('/plataformas')
+def plataformas():
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+    
+    conn = get_db_connection()
+    if not conn:
+        return "Erro de conexão com banco de dados", 500
+    
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM plataformas ORDER BY nome")
+        plataformas_data = cur.fetchall()
+        
+    except Exception as e:
+        return f"Erro ao carregar plataformas: {e}", 500
+    finally:
+        cur.close()
+        conn.close()
+    
+    plataformas_html = '''
+    {% extends "base.html" %}
+    {% block content %}
+    <div class="container">
+        <div class="header">
+            <h1>🌐 Plataformas</h1>
+            <div class="nav">
+                <a href="{{ url_for('dashboard') }}" class="nav-btn">🏠 Dashboard</a>
+                <a href="{{ url_for('fornecedores') }}" class="nav-btn">👥 Fornecedores</a>
+                <a href="{{ url_for('licitacoes') }}" class="nav-btn">📋 Licitações</a>
+                <a href="{{ url_for('logout') }}" class="logout-btn">🚪 Sair</a>
+            </div>
+        </div>
+        
+        <div class="content">
+            <h2 class="section-title">Plataformas de Licitação</h2>
+            
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Nome</th>
+                        <th>URL</th>
+                        <th>Login</th>
+                        <th>Descrição</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for plataforma in plataformas_data %}
+                    <tr>
+                        <td><strong>{{ plataforma[1] }}</strong></td>
+                        <td>
+                            {% if plataforma[2] %}
+                            <a href="{{ plataforma[2] }}" target="_blank" style="color: #3498db;">{{ plataforma[2] }}</a>
+                            {% else %}
+                            N/A
+                            {% endif %}
+                        </td>
+                        <td>{{ plataforma[3] if plataforma[3] else "N/A" }}</td>
+                        <td>{{ plataforma[4] }}</td>
+                        <td><span class="status-badge status-ativo">{{ plataforma[5] }}</span></td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {% endblock %}
+    '''
+    
+    return render_template_string(HTML_TEMPLATE + plataformas_html, 
+                                plataformas_data=plataformas_data)
 
 @app.route('/health')
 def health():
-    """Endpoint de saúde para monitoramento"""
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        cursor.execute('SELECT 1')
-        cursor.close()
-        conn.close()
-        return jsonify({"status": "healthy", "database": "connected"})
-    except Exception as e:
-        return jsonify({"status": "unhealthy", "error": str(e)}), 500
+    return jsonify({"status": "healthy", "service": "hospshop"})
 
 if __name__ == '__main__':
-    if DATABASE_URL:
-        print("🚀 Iniciando Sistema Hospshop no Railway...")
-        init_db()
-        load_sample_data()
-        port = int(os.environ.get('PORT', 8080))
-        app.run(host='0.0.0.0', port=port)
+    # Inicializar banco de dados
+    if init_db():
+        app.logger.info("Banco de dados inicializado com sucesso")
     else:
-        print("❌ DATABASE_URL não encontrada. Verifique as configurações do Railway.")
-        app.run(host='0.0.0.0', port=8080, debug=True)
+        app.logger.error("Erro ao inicializar banco de dados")
+    
+    port = int(os.environ.get('PORT', 5000))
+    app.run(host='0.0.0.0', port=port, debug=False)
