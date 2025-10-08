@@ -8,7 +8,7 @@ app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'hospshop-secret-key-2024')
 
 # Configuração do banco de dados
-DATABASE_URL = os.environ.get('DATABASE_URL')
+DATABASE_URL = os.environ.get('URL_DO_BANCO_DE_DADOS')
 
 def get_db_connection():
     try:
