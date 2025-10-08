@@ -442,7 +442,7 @@ def login():
     {% endblock %}
     '''
     
-    return render_template_string(HTML_TEMPLATE + login_html, error=locals().get('error'))
+    return render_template_string(login_html, error=locals().get('error'))
 
 @app.route('/logout')
 def logout():
