@@ -160,6 +160,7 @@ def index():
     return redirect(url_for('dashboard'))
 
 @app.route('/login', methods=['GET', 'POST'])
+init_db()
 def login():
     if request.method == 'POST':
         username = request.form['username']
