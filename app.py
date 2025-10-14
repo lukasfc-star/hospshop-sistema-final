@@ -1,5 +1,5 @@
 import os
-import psycopg2
+import sqlite3
 from flask import Flask, render_template_string, request, redirect, url_for, session, jsonify
 from werkzeug.security import check_password_hash, generate_password_hash
 import logging
@@ -8,11 +8,12 @@ app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'hospshop-secret-key-2024')
 
 # Configuração do banco de dados
-DATABASE_URL = os.environ.get('URL_DO_BANCO_DE_DADOS')
+DATABASE_URL = 'sqlite:///hospshop.db'
 
 def get_db_connection():
     try:
-        conn = psycopg2.connect(DATABASE_URL)
+        conn = sqlite3.connect('hospshop.db')
+        conn.row_factory = sqlite3.Row
         return conn
     except Exception as e:
         app.logger.error(f"Erro na conexão com banco: {e}")
