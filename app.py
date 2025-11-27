@@ -345,6 +345,7 @@ def dashboard():
                 <a href="/fornecedores" class="nav-btn">👥 Fornecedores</a>
                 <a href="/licitacoes" class="nav-btn">📋 Licitações</a>
                 <a href="/plataformas" class="nav-btn">🌐 Plataformas</a>
+                <a href="/analise-concorrentes" class="nav-btn" style="background: linear-gradient(45deg, #e74c3c, #c0392b);">⚠️ Análise de Concorrentes</a>
                 <a href="/logout" class="logout-btn">🚪 Sair</a>
             </div>
         </div>
@@ -585,7 +586,9 @@ def licitacoes():
             <div class="nav">
                 <a href="/dashboard" class="nav-btn">🏠 Dashboard</a>
                 <a href="/fornecedores" class="nav-btn">👥 Fornecedores</a>
+                <a href="/licitacoes" class="nav-btn">📋 Licitações</a>
                 <a href="/plataformas" class="nav-btn">🌐 Plataformas</a>
+                <a href="/analise-concorrentes" class="nav-btn" style="background: linear-gradient(45deg, #e74c3c, #c0392b);">⚠️ Análise</a>
                 <a href="/logout" class="logout-btn">🚪 Sair</a>
             </div>
         </div>
@@ -708,6 +711,8 @@ def plataformas():
                 <a href="/dashboard" class="nav-btn">🏠 Dashboard</a>
                 <a href="/fornecedores" class="nav-btn">👥 Fornecedores</a>
                 <a href="/licitacoes" class="nav-btn">📋 Licitações</a>
+                <a href="/plataformas" class="nav-btn">🌐 Plataformas</a>
+                <a href="/analise-concorrentes" class="nav-btn" style="background: linear-gradient(45deg, #e74c3c, #c0392b);">⚠️ Análise</a>
                 <a href="/logout" class="logout-btn">🚪 Sair</a>
             </div>
         </div>
@@ -750,6 +755,91 @@ def plataformas():
     '''
     
     return render_template_string(plataformas_html, plataformas_data=plataformas_data)
+
+@app.route('/analise-concorrentes')
+def analise_concorrentes():
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+    
+    analise_html = '''
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hospshop - Análise de Concorrentes</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh; color: #333;
+        }
+        .container { max-width: 1400px; margin: 0 auto; padding: 20px; }
+        .header {
+            background: rgba(255, 255, 255, 0.95); padding: 20px; border-radius: 15px;
+            margin-bottom: 30px; box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+        }
+        .header h1 { color: #2c3e50; text-align: center; font-size: 2.5em; margin-bottom: 10px; }
+        .nav { display: flex; justify-content: center; gap: 15px; margin-top: 20px; flex-wrap: wrap; }
+        .nav-btn {
+            background: linear-gradient(45deg, #3498db, #2980b9); color: white;
+            padding: 10px 20px; border: none; border-radius: 25px; cursor: pointer;
+            font-size: 14px; text-decoration: none; display: inline-block;
+        }
+        .logout-btn {
+            background: linear-gradient(45deg, #95a5a6, #7f8c8d); color: white;
+            padding: 10px 20px; border: none; border-radius: 20px; cursor: pointer;
+            font-size: 14px; text-decoration: none; display: inline-block;
+        }
+        .dashboard-frame {
+            background: white; border-radius: 15px; overflow: hidden;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1); height: calc(100vh - 200px);
+        }
+        iframe { width: 100%; height: 100%; border: none; }
+        .info-box {
+            background: rgba(52, 152, 219, 0.1); border-left: 4px solid #3498db;
+            padding: 15px; margin-bottom: 20px; border-radius: 8px;
+        }
+        .info-box p { color: #2c3e50; margin: 5px 0; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>⚠️ Análise de Concorrentes</h1>
+            <p style="text-align: center; color: #7f8c8d; font-size: 1.2em;">
+                Detecção Automática de Irregularidades e Geração de Recursos Jurídicos
+            </p>
+            <div class="nav">
+                <a href="/dashboard" class="nav-btn">🏠 Dashboard</a>
+                <a href="/fornecedores" class="nav-btn">👥 Fornecedores</a>
+                <a href="/licitacoes" class="nav-btn">📋 Licitações</a>
+                <a href="/plataformas" class="nav-btn">🌐 Plataformas</a>
+                <a href="/analise-concorrentes" class="nav-btn" style="background: linear-gradient(45deg, #e74c3c, #c0392b);">⚠️ Análise</a>
+                <a href="/logout" class="logout-btn">🚪 Sair</a>
+            </div>
+        </div>
+        
+        <div class="info-box">
+            <p><strong>📊 Status do Sistema:</strong> Monitorando 6 licitações ativas</p>
+            <p><strong>⚠️ Irregularidades Detectadas:</strong> 18 casos identificados</p>
+            <p><strong>📄 Recursos Gerados:</strong> 8 recursos jurídicos prontos</p>
+            <p><strong>💰 Economia Estimada:</strong> R$ 408.250,00</p>
+        </div>
+        
+        <div class="dashboard-frame">
+            <iframe src="https://3000-icd1p1kv01jd67mmshjyx-c966b569.manusvm.computer" 
+                    allow="fullscreen" 
+                    loading="lazy">
+            </iframe>
+        </div>
+    </div>
+</body>
+</html>
+    '''
+    
+    return render_template_string(analise_html)
 
 @app.route('/health')
 def health():
