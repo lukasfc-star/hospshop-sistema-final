@@ -777,6 +777,11 @@ def plataformas():
     
     return render_template_string(plataformas_html, plataformas_data=plataformas_data)
 
+@app.route('/assets/<path:filename>')
+def serve_dashboard_assets(filename):
+    """Servir assets do dashboard React"""
+    return send_from_directory('static/dashboard/assets', filename)
+
 @app.route('/analise-concorrentes')
 def analise_concorrentes():
     if 'user_id' not in session:
