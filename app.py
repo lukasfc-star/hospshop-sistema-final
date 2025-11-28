@@ -1,11 +1,16 @@
 import os
 import sqlite3
-from flask import Flask, render_template_string, request, redirect, url_for, session, jsonify
+from flask import Flask, render_template_string, request, redirect, url_for, session, jsonify, send_from_directory
 from werkzeug.security import check_password_hash, generate_password_hash
 import logging
 
-app = Flask(__name__)
+app = Flask(__name__, static_folder='static', static_url_path='/static')
 app.secret_key = os.environ.get('SECRET_KEY', 'hospshop-secret-key-2024')
+
+# Rota para servir arquivos estáticos em produção
+@app.route('/static/<path:path>')
+def serve_static(path):
+    return send_from_directory('static', path)
 
 # Configurar logging
 logging.basicConfig(level=logging.INFO)
