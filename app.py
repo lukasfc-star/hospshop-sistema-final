@@ -7,13 +7,21 @@ import logging
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'hospshop-secret-key-2024')
 
+# Configurar logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
 # Importar e registrar rotas da API de análise de concorrentes
 try:
     from api_analise import register_api_routes
     register_api_routes(app)
-    logging.info("Rotas da API de Análise de Concorrentes carregadas com sucesso")
-except ImportError as e:
-    logging.warning(f"Módulo api_analise não encontrado: {e}. Rotas da API não serão carregadas.")
+    logger.info("✅ Rotas da API de Análise de Concorrentes carregadas com sucesso")
+    print("✅ API de Análise de Concorrentes integrada!")
+except Exception as e:
+    logger.error(f"❌ Erro ao carregar módulo api_analise: {e}")
+    print(f"❌ ERRO ao importar api_analise: {e}")
+    import traceback
+    traceback.print_exc()
 
 # Configuração do banco de dados SQLite
 DATABASE_URL = 'hospshop.db'
