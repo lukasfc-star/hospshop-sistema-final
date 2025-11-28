@@ -6,7 +6,7 @@ Sistema Hospshop
 Servidor Flask que fornece endpoints para o dashboard React
 """
 
-from flask import Flask, jsonify, request
+from flask import Blueprint, jsonify, request
 from flask_cors import CORS
 import sqlite3
 import os
@@ -16,16 +16,9 @@ import json
 
 # Configurações
 DB_PATH = os.path.join(os.path.dirname(__file__), 'analise_concorrentes.db')
-app = Flask(__name__)
 
-# Configurar CORS para permitir acesso do React
-CORS(app, resources={
-    r"/api/*": {
-        "origins": ["*"],  # Em produção, especificar domínios permitidos
-        "methods": ["GET", "POST", "PUT", "DELETE"],
-        "allow_headers": ["Content-Type", "Authorization"]
-    }
-})
+# Criar Blueprint em vez de app Flask separado
+api_bp = Blueprint('analise_api', __name__)
 
 # ============================================================================
 # FUNÇÕES AUXILIARES
@@ -64,7 +57,7 @@ def calcular_tempo_decorrido(data_str):
 # ENDPOINTS - MÉTRICAS
 # ============================================================================
 
-@app.route('/api/metricas', methods=['GET'])
+@api_bp.route('/api/metricas', methods=['GET'])
 def get_metricas():
     """Retorna métricas gerais do sistema"""
     try:
@@ -109,7 +102,7 @@ def get_metricas():
 # ENDPOINTS - LICITAÇÕES
 # ============================================================================
 
-@app.route('/api/licitacoes', methods=['GET'])
+@api_bp.route('/api/licitacoes', methods=['GET'])
 def get_licitacoes():
     """Retorna lista de licitações"""
     try:
@@ -178,7 +171,7 @@ def get_licitacoes():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-@app.route('/api/licitacoes/<int:licitacao_id>', methods=['GET'])
+@api_bp.route('/api/licitacoes/<int:licitacao_id>', methods=['GET'])
 def get_licitacao_detalhes(licitacao_id):
     """Retorna detalhes de uma licitação específica"""
     try:
@@ -237,7 +230,7 @@ def get_licitacao_detalhes(licitacao_id):
 # ENDPOINTS - IRREGULARIDADES
 # ============================================================================
 
-@app.route('/api/irregularidades', methods=['GET'])
+@api_bp.route('/api/irregularidades', methods=['GET'])
 def get_irregularidades():
     """Retorna lista de irregularidades"""
     try:
@@ -291,7 +284,7 @@ def get_irregularidades():
 # ENDPOINTS - RECURSOS JURÍDICOS
 # ============================================================================
 
-@app.route('/api/recursos', methods=['GET'])
+@api_bp.route('/api/recursos', methods=['GET'])
 def get_recursos():
     """Retorna lista de recursos jurídicos"""
     try:
@@ -343,7 +336,7 @@ def get_recursos():
 # ENDPOINTS - GRÁFICOS
 # ============================================================================
 
-@app.route('/api/graficos/irregularidades-por-tipo', methods=['GET'])
+@api_bp.route('/api/graficos/irregularidades-por-tipo', methods=['GET'])
 def get_grafico_irregularidades():
     """Retorna dados para gráfico de irregularidades por tipo"""
     try:
@@ -385,7 +378,7 @@ def get_grafico_irregularidades():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-@app.route('/api/graficos/recursos-timeline', methods=['GET'])
+@api_bp.route('/api/graficos/recursos-timeline', methods=['GET'])
 def get_grafico_recursos_timeline():
     """Retorna dados para gráfico de timeline de recursos"""
     try:
@@ -443,7 +436,7 @@ def get_grafico_recursos_timeline():
 # ENDPOINTS - ANALISTAS
 # ============================================================================
 
-@app.route('/api/analistas', methods=['GET'])
+@api_bp.route('/api/analistas', methods=['GET'])
 def get_analistas():
     """Retorna lista de analistas"""
     try:
@@ -471,7 +464,7 @@ def get_analistas():
 # ENDPOINTS - ALERTAS
 # ============================================================================
 
-@app.route('/api/alertas', methods=['GET'])
+@api_bp.route('/api/alertas', methods=['GET'])
 def get_alertas():
     """Retorna lista de alertas"""
     try:
@@ -535,7 +528,7 @@ def get_alertas():
 # ENDPOINTS - DASHBOARD
 # ============================================================================
 
-@app.route('/api/dashboard/resumo', methods=['GET'])
+@api_bp.route('/api/dashboard/resumo', methods=['GET'])
 def get_dashboard_resumo():
     """Retorna resumo completo para o dashboard"""
     try:
@@ -600,7 +593,7 @@ def get_dashboard_resumo():
 # ENDPOINTS - HEALTH CHECK
 # ============================================================================
 
-@app.route('/api/health', methods=['GET'])
+@api_bp.route('/api/health', methods=['GET'])
 def health_check():
     """Endpoint de health check"""
     try:
@@ -621,7 +614,7 @@ def health_check():
             'error': str(e)
         }), 500
 
-@app.route('/', methods=['GET'])
+@api_bp.route('/', methods=['GET'])
 def index():
     """Rota raiz"""
     return jsonify({
@@ -648,27 +641,19 @@ def index():
 # ============================================================================
 
 def register_api_routes(main_app):
-    """Registra as rotas da API no app principal"""
-    print(f"\n🔧 Registrando rotas da API de Análise de Concorrentes...")
-    print(f"📊 Total de rotas encontradas: {len(list(app.url_map.iter_rules()))}")
+    """Registra as rotas da API no app principal via Blueprint"""
+    # Configurar CORS no app principal para as rotas da API
+    CORS(main_app, resources={
+        r"/api/*": {
+            "origins": ["*"],
+            "methods": ["GET", "POST", "PUT", "DELETE"],
+            "allow_headers": ["Content-Type", "Authorization"]
+        }
+    })
     
-    rotas_registradas = 0
-    # Registrar todas as rotas da API no app principal
-    for rule in app.url_map.iter_rules():
-        if rule.endpoint != 'static':
-            try:
-                main_app.add_url_rule(
-                    rule.rule,
-                    endpoint=f'analise_{rule.endpoint}',
-                    view_func=app.view_functions[rule.endpoint],
-                    methods=rule.methods
-                )
-                print(f"  ✅ {rule.rule} -> {rule.endpoint}")
-                rotas_registradas += 1
-            except Exception as e:
-                print(f"  ❌ Erro ao registrar {rule.rule}: {e}")
-    
-    print(f"\n✅ Total de rotas registradas: {rotas_registradas}\n")
+    # Registrar Blueprint no app principal
+    main_app.register_blueprint(api_bp)
+    print(f"\n✅ Blueprint 'analise_api' registrado com sucesso!\n")
 
 if __name__ == '__main__':
     print("=" * 60)
@@ -685,8 +670,13 @@ if __name__ == '__main__':
         print("💡 Execute primeiro: python3 init_database.py")
         exit(1)
     
+    # Criar app temporário para testes standalone
+    from flask import Flask
+    test_app = Flask(__name__)
+    register_api_routes(test_app)
+    
     # Iniciar servidor
-    app.run(
+    test_app.run(
         host='0.0.0.0',
         port=5000,
         debug=True
