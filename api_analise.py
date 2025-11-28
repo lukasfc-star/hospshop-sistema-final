@@ -649,15 +649,26 @@ def index():
 
 def register_api_routes(main_app):
     """Registra as rotas da API no app principal"""
+    print(f"\n🔧 Registrando rotas da API de Análise de Concorrentes...")
+    print(f"📊 Total de rotas encontradas: {len(list(app.url_map.iter_rules()))}")
+    
+    rotas_registradas = 0
     # Registrar todas as rotas da API no app principal
     for rule in app.url_map.iter_rules():
         if rule.endpoint != 'static':
-            main_app.add_url_rule(
-                rule.rule,
-                endpoint=f'api_{rule.endpoint}',
-                view_func=app.view_functions[rule.endpoint],
-                methods=rule.methods
-            )
+            try:
+                main_app.add_url_rule(
+                    rule.rule,
+                    endpoint=f'analise_{rule.endpoint}',
+                    view_func=app.view_functions[rule.endpoint],
+                    methods=rule.methods
+                )
+                print(f"  ✅ {rule.rule} -> {rule.endpoint}")
+                rotas_registradas += 1
+            except Exception as e:
+                print(f"  ❌ Erro ao registrar {rule.rule}: {e}")
+    
+    print(f"\n✅ Total de rotas registradas: {rotas_registradas}\n")
 
 if __name__ == '__main__':
     print("=" * 60)
