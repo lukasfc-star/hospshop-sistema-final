@@ -7,6 +7,14 @@ import logging
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'hospshop-secret-key-2024')
 
+# Importar e registrar rotas da API de análise de concorrentes
+try:
+    from api_analise import register_api_routes
+    register_api_routes(app)
+    logging.info("Rotas da API de Análise de Concorrentes carregadas com sucesso")
+except ImportError as e:
+    logging.warning(f"Módulo api_analise não encontrado: {e}. Rotas da API não serão carregadas.")
+
 # Configuração do banco de dados SQLite
 DATABASE_URL = 'hospshop.db'
 
@@ -829,7 +837,7 @@ def analise_concorrentes():
         </div>
         
         <div class="dashboard-frame">
-            <iframe src="https://3000-icd1p1kv01jd67mmshjyx-c966b569.manusvm.computer" 
+            <iframe src="/static/dashboard/index.html" 
                     allow="fullscreen" 
                     loading="lazy">
             </iframe>
