@@ -642,7 +642,18 @@ def index():
 
 def register_api_routes(main_app):
     """Registra as rotas da API no app principal via Blueprint"""
+    import logging
+    logger = logging.getLogger('app')
+    
+    logger.info("\n" + "="*60)
+    logger.info("🔧 INICIANDO REGISTRO DE ROTAS DA API")
+    logger.info("="*60)
+    
+    # Verificar rotas do Blueprint ANTES de registrar
+    logger.info(f"📊 Blueprint tem {len(api_bp.deferred_functions)} funções diferidas")
+    
     # Configurar CORS no app principal para as rotas da API
+    logger.info("🌐 Configurando CORS...")
     CORS(main_app, resources={
         r"/api/*": {
             "origins": ["*"],
@@ -650,10 +661,30 @@ def register_api_routes(main_app):
             "allow_headers": ["Content-Type", "Authorization"]
         }
     })
+    logger.info("✅ CORS configurado")
     
     # Registrar Blueprint no app principal
+    logger.info(f"📦 Registrando Blueprint '{api_bp.name}'...")
     main_app.register_blueprint(api_bp)
-    print(f"\n✅ Blueprint 'analise_api' registrado com sucesso!\n")
+    logger.info("✅ Blueprint registrado!")
+    
+    # Verificar rotas do app DEPOIS de registrar
+    rotas_registradas = [str(rule) for rule in main_app.url_map.iter_rules()]
+    rotas_api = [r for r in rotas_registradas if '/api/' in r]
+    
+    logger.info(f"\n📊 Total de rotas no app: {len(rotas_registradas)}")
+    logger.info(f"📊 Rotas da API (/api/*): {len(rotas_api)}")
+    
+    if rotas_api:
+        logger.info("\n📄 Rotas da API registradas:")
+        for rota in rotas_api:
+            logger.info(f"  ✅ {rota}")
+    else:
+        logger.error("❌ NENHUMA rota da API foi registrada!")
+    
+    logger.info("\n" + "="*60)
+    logger.info("✅ REGISTRO DE ROTAS CONCLUÍDO")
+    logger.info("="*60 + "\n")
 
 if __name__ == '__main__':
     print("=" * 60)
