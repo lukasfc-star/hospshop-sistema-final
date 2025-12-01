@@ -9,6 +9,8 @@ from flask import Flask, jsonify, request
 from flask_cors import CORS
 import logging
 from datetime import datetime
+from functools import wraps
+from auth import AuthSystem
 
 # Importar todos os módulos
 from effecti_integration import EffectiIntegration
@@ -33,6 +35,40 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)
 CORS(app)  # Habilitar CORS para o dashboard
 
+# Inicializar sistema de autenticação
+auth_system = AuthSystem()
+
+# Decorator para proteger rotas
+def require_auth(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        token = request.headers.get('Authorization', '').replace('Bearer ', '')
+        if not token:
+            return jsonify({'error': 'Token não fornecido'}), 401
+        
+        payload = auth_system.verificar_token(token)
+        if not payload:
+            return jsonify({'error': 'Token inválido ou expirado'}), 401
+        
+        request.usuario = payload
+        return f(*args, **kwargs)
+    return decorated_function
+
+# Decorator para verificar nível de acesso
+def require_role(roles):
+    def decorator(f):
+        @wraps(f)
+        def decorated_function(*args, **kwargs):
+            if not hasattr(request, 'usuario'):
+                return jsonify({'error': 'Não autenticado'}), 401
+            
+            if request.usuario['nivel_acesso'] not in roles:
+                return jsonify({'error': 'Permissão negada'}), 403
+            
+            return f(*args, **kwargs)
+        return decorated_function
+    return decorator
+
 # Inicializar módulos
 effecti = EffectiIntegration()
 padronizacao = PadronizacaoCaptacao()
@@ -49,6 +85,109 @@ payments = PaymentTracking()
 logistics = LogisticsManagement()
 reports = ReportingSystem()
 
+
+# ==================== ENDPOINTS DE AUTENTICAÇÃO ====================
+
+@app.route('/api/auth/login', methods=['POST'])
+def login():
+    """Login de usuário"""
+    try:
+        data = request.json
+        username = data.get('username')
+        senha = data.get('senha')
+        
+        if not username or not senha:
+            return jsonify({'error': 'Username e senha são obrigatórios'}), 400
+        
+        ip_address = request.remote_addr
+        user_agent = request.headers.get('User-Agent')
+        
+        resultado = auth_system.login(username, senha, ip_address, user_agent)
+        return jsonify(resultado)
+    
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 401
+    except Exception as e:
+        logger.error(f"Erro ao fazer login: {e}")
+        return jsonify({'error': f'Erro ao fazer login: {str(e)}'}), 500
+
+@app.route('/api/auth/logout', methods=['POST'])
+@require_auth
+def logout():
+    """Logout de usuário"""
+    try:
+        token = request.headers.get('Authorization', '').replace('Bearer ', '')
+        auth_system.logout(token)
+        return jsonify({'message': 'Logout realizado com sucesso'})
+    except Exception as e:
+        return jsonify({'error': f'Erro ao fazer logout: {str(e)}'}), 500
+
+@app.route('/api/auth/me', methods=['GET'])
+@require_auth
+def me():
+    """Retorna informações do usuário logado"""
+    return jsonify(request.usuario)
+
+@app.route('/api/auth/usuarios', methods=['GET'])
+@require_auth
+@require_role(['admin'])
+def listar_usuarios():
+    """Lista todos os usuários (apenas admin)"""
+    try:
+        usuarios = auth_system.listar_usuarios()
+        return jsonify(usuarios)
+    except Exception as e:
+        return jsonify({'error': f'Erro ao listar usuários: {str(e)}'}), 500
+
+@app.route('/api/auth/usuarios', methods=['POST'])
+@require_auth
+@require_role(['admin'])
+def criar_usuario():
+    """Cria novo usuário (apenas admin)"""
+    try:
+        data = request.json
+        usuario = auth_system.criar_usuario(
+            username=data['username'],
+            email=data['email'],
+            senha=data['senha'],
+            nome_completo=data['nome_completo'],
+            nivel_acesso=data.get('nivel_acesso', 'operador'),
+            criado_por=request.usuario['usuario_id']
+        )
+        return jsonify(usuario), 201
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+    except Exception as e:
+        return jsonify({'error': f'Erro ao criar usuário: {str(e)}'}), 500
+
+@app.route('/api/auth/alterar-senha', methods=['POST'])
+@require_auth
+def alterar_senha():
+    """Altera senha do usuário logado"""
+    try:
+        data = request.json
+        auth_system.alterar_senha(
+            usuario_id=request.usuario['usuario_id'],
+            senha_antiga=data['senha_antiga'],
+            senha_nova=data['senha_nova']
+        )
+        return jsonify({'message': 'Senha alterada com sucesso'})
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+    except Exception as e:
+        return jsonify({'error': f'Erro ao alterar senha: {str(e)}'}), 500
+
+@app.route('/api/auth/logs', methods=['GET'])
+@require_auth
+@require_role(['admin'])
+def obter_logs():
+    """Obtém logs de acesso (apenas admin)"""
+    try:
+        limite = request.args.get('limite', 100, type=int)
+        logs = auth_system.obter_logs(limite=limite)
+        return jsonify(logs)
+    except Exception as e:
+        return jsonify({'error': f'Erro ao obter logs: {str(e)}'}), 500
 
 # ==================== ENDPOINTS DE DASHBOARD ====================
 
